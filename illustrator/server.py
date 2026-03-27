@@ -13,18 +13,6 @@ import mcp.types as types
 from mcp.server.models import InitializationOptions
 from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
-from PIL import ImageGrab
-
-# Handle win32com import with better error handling
-try:
-    import win32com.client
-    import pythoncom
-    WIN32_AVAILABLE = True
-    print("WIN32 COM modules loaded successfully", file=sys.stderr)
-except ImportError as e:
-    print(f"Win32 COM not available: {e}", file=sys.stderr)
-    WIN32_AVAILABLE = False
-    win32com = None
 
 try:
     from .prompt import (
@@ -45,6 +33,11 @@ except ImportError:
         format_advanced_template,
     )
 
+try:
+    from .platform_backend import get_backend
+except ImportError:
+    from platform_backend import get_backend
+
 # Set up logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -54,13 +47,25 @@ logging.basicConfig(
 
 server = Server("illustrator")
 
+# Initialise the platform-specific backend (Windows COM or macOS AppleScript).
+# This is done lazily on first tool call to avoid errors at import time when
+# Illustrator is not yet running.
+_backend = None
+
+
+def _get_backend():
+    global _backend
+    if _backend is None:
+        _backend = get_backend()
+    return _backend
+
 
 def _print_client_config_hint() -> None:
     """Print a ready-to-copy config snippet for MCP clients."""
     python_path = sys.executable.replace("\\", "\\\\")
     server_path = os.path.abspath(__file__).replace("\\", "\\\\")
     hint = f"""
-Add this MCP config in Codex/Cursor/Claude client settings:
+Add this MCP config in your client settings (Claude Desktop / Claude Code / Cursor / VS Code Copilot / JetBrains Copilot):
 {{
   "mcpServers": {{
     "illustrator": {{
@@ -156,17 +161,9 @@ async def handle_list_tools() -> list[types.Tool]:
 
 def capture_illustrator() -> list[types.TextContent | types.ImageContent]:
     logging.info("Starting screenshot capture for Illustrator.")
-    if not WIN32_AVAILABLE:
-        return [types.TextContent(type="text", text="Win32 COM not available. Please install pywin32 and restart the server.")]
-    
     try:
-        shell = win32com.client.Dispatch("WScript.Shell")
-        shell.AppActivate("Adobe Illustrator")
-        time.sleep(1)
-        screenshot = ImageGrab.grab()
-        buffer = io.BytesIO()
-        screenshot.save(buffer, format="JPEG", quality=50, optimize=True)
-        screenshot_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        backend = _get_backend()
+        screenshot_data = backend.capture_screenshot()
         logging.info("Screenshot captured successfully.")
         return [types.ImageContent(type="image", mimeType="image/jpeg", data=screenshot_data)]
     except Exception as e:
@@ -174,22 +171,12 @@ def capture_illustrator() -> list[types.TextContent | types.ImageContent]:
         return [types.TextContent(type="text", text=f"Failed to capture screenshot: {str(e)}")]
 
 def run_illustrator_script(code: str) -> list[types.TextContent]:
-    logging.info("Running ExtendScript code in Illustrator using COM.")
-    if not WIN32_AVAILABLE:
-        return [types.TextContent(type="text", text="Win32 COM not available. Please install pywin32 and restart the server.")]
-    
+    logging.info("Running ExtendScript code in Illustrator.")
     try:
-        with tempfile.NamedTemporaryFile(suffix=".jsx", delete=False) as jsx_file:
-            jsx_file.write(code.encode("utf-8"))
-            jsx_file_path = jsx_file.name
-        logging.debug(f"ExtendScript saved to: {jsx_file_path}")
-        illustrator = win32com.client.Dispatch("Illustrator.Application")
-        result = illustrator.DoJavaScriptFile(jsx_file_path)
+        backend = _get_backend()
+        result = backend.run_script(code)
         logging.info("ExtendScript executed successfully.")
-        os.unlink(jsx_file_path)
-        logging.debug("Temporary ExtendScript file removed.")
-        result_text = str(result) if result is not None else "Script executed successfully (no return value)"
-        return [types.TextContent(type="text", text=result_text)]
+        return [types.TextContent(type="text", text=result)]
     except Exception as e:
         logging.error(f"Failed to execute script: {str(e)}")
         return [types.TextContent(type="text", text=f"Failed to execute script: {str(e)}")]
