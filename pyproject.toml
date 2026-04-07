@@ -5,11 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "illustrator"
 version = "0.1.0"
+requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
     "mcp>=1.1.1",
     "pillow>=11.0.0",
-    "pywin32>=306",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.scripts]

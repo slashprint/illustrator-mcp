@@ -1,113 +1,134 @@
-# Illustrator MCP Server (Windows)
+# Illustrator MCP Server (Windows & macOS)
 
 Welcome to the **Illustrator MCP Server**! 🎨🚀
 
-This project allows Claude to **directly create vector graphics** inside **Adobe Illustrator** using natural language prompts.  
-It works by sending TypeScript commands to Illustrator via a local server.
+This project allows AI agents to **directly create vector graphics** inside **Adobe Illustrator** using natural language prompts.  
+It works by sending ExtendScript commands to Illustrator via a local MCP (Model Context Protocol) server.
 
 > Imagine simply describing what you want — like *"draw a small coffee shop during rain"* — and Illustrator brings it to life!
 
-This version works on **Windows** by communicating with Illustrator’s scripting engine directly.
+Works on **Windows** (COM automation) and **macOS** (AppleScript/osascript).
 
 ---
 
 ## ✨ Features
 - Control Adobe Illustrator programmatically using AI prompts
-- Send TypeScript (.tsx) scripts directly to Illustrator
+- Send ExtendScript (.jsx) scripts directly to Illustrator
+- Capture screenshots of the Illustrator window
 - Open-source and lightweight
-- Designed to work with **Claude Desktop** (but can work with any agent that speaks MCP)
+- **Cross-platform:** Windows & macOS
+- **Multi-client:** Works with Claude Desktop, Claude Code, Cursor, VS Code Copilot, and JetBrains Copilot
 
 ---
 
 ## 💻 Installation
 
-1. **Install Python 3.11+**
+### Prerequisites
+- **Python 3.12+** — [Download Python](https://www.python.org/downloads/)
+- **Adobe Illustrator** installed and running
+- **macOS only:** Grant Automation permissions when prompted (System Settings → Privacy & Security → Automation)
 
-   Make sure you have Python installed.  
-   [Download Python here](https://www.python.org/downloads/).
-
-2. **Clone this repository**
+### 1. Clone the repository
 
    ```bash
    git clone https://github.com/krVatsal/illustrator-mcp.git
    cd illustrator-mcp
    ```
 
-3. **Create a virtual environment** (recommended)
+### 2. Create a virtual environment
 
-   ```bash
-   python -m venv venv
-   .\venv\Scripts\activate
-   ```
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-4. **Install dependencies**
+**Windows:**
+```bash
+python -m venv .venv
+.\.venv\Scripts\activate
+```
 
-   ```bash
-   pip install -r requirements.txt
-   or
-   uv sync
-   ```
+### 3. Install dependencies
 
-5. **Start the MCP Server**
+```bash
+pip install -r requirements.txt
+```
+> On macOS, `pywin32` is automatically skipped. No extra macOS packages required.
 
-   ```bash
-   python illustrator/server.py
-   ```
+### 4. Start the MCP Server (manual / debug mode)
 
-## Run With One Script (Windows + Git Bash)
+```bash
+python -m illustrator
+```
 
-You can run setup + startup using:
+### Run with one script (cross-platform)
 
 ```bash
 bash run_server.sh
 ```
 
-What this script does:
-- Creates `.venv` if it does not exist
-- Bootstraps `pip` in `.venv` if missing
-- Installs dependencies only when needed
-- Skips reinstall when requirements are already satisfied
-- Re-checks environment health before skipping install (`pip check` + key imports)
-- Starts the MCP server
-- Handles Windows/POSIX path conversion when launched from Git Bash or WSL-style shells
-
-How to stop the server:
-- Press `Ctrl+C` in the terminal where the server is running
+This script auto-detects your platform, creates a `.venv`, installs dependencies, and starts the server.
 
 ---
 
-## 🛠️ Setting up Claude Desktop
+## 🔌 Client Configuration
 
-To allow Claude Desktop to communicate with the MCP server:
+The server uses **stdio transport** — compatible with all major MCP clients.
 
-1. Open the configuration file:
+> **Important:** Do NOT start the server manually when using it through a client. The client starts and manages the server process automatically.
 
-   ```
-   %APPDATA%\Claude\claude_desktop_config.json
-   ```
+### Claude Desktop
 
-2. Add the MCP server configuration:
-
-   ```json
-
-    "mcpServers": {
-        "illustrator": {
-            "command": "C:\\Users\\<YourUser>\\Projects\\illustrator-mcp\\.venv\\Scripts\\python.exe",
-            "args": [
-                "C:\\Users\\<YourUser>\\Projects\\illustrator-mcp\\illustrator\\server.py"
-            ]
-        }
+**macOS** — edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "illustrator": {
+      "command": "/path/to/illustrator-mcp/.venv/bin/python3",
+      "args": ["-m", "illustrator"]
     }
+  }
+}
+```
 
-   ```
-   Use absolute paths and replace `<YourUser>` with your Windows username.
-   If your config already has JSON content, merge this under the top-level object.
+**Windows** — edit `%APPDATA%\Claude\claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "illustrator": {
+      "command": "C:\\Users\\<YourUser>\\illustrator-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "illustrator"]
+    }
+  }
+}
+```
 
-3. Restart Claude Desktop after saving the config.
-4. Do not start `python illustrator/server.py` manually when using Claude Desktop MCP.
-   Claude Desktop starts and stops the server process automatically from this config.
-   Run the server manually only for local debugging.
-NOTE: Same method can be used with Cursor also, if Claude desktop fails(Might be bug in claude desktop with versions) then try on Cursor
+### Claude Code (CLI)
+
+A `.claude/mcp.json` is included in the repo. Claude Code will auto-detect it. Or add manually:
+
+```bash
+claude mcp add illustrator python3 -- -m illustrator
+```
+
+### GitHub Copilot (VS Code)
+
+A `.vscode/mcp.json` is included in the repo. VS Code (1.99+) will auto-detect it. Or add to your `settings.json`:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "illustrator": {
+        "type": "stdio",
+        "command": "python3",
+        "args": ["-m", "illustrator"]
+      }
+    }
+  }
+}
+```
 ---
 
 ## 🎯 Enhanced Prompt System
@@ -154,13 +175,18 @@ Here are some prompts I used along with the results it generated:
 
 ---
 
+## 🍎 macOS Notes
 
-## 🧐 Notes
+- Adobe Illustrator must be installed and running
+- On first use, macOS will ask for **Automation permission** — allow your terminal/IDE to control Illustrator
+- If you see "Application not running" errors, open Illustrator first
+- Screenshots capture the full screen (Illustrator should be in foreground)
 
-- You need **Adobe Illustrator** installed on your system.
-- Make sure Illustrator scripting is enabled.
-- This server sends TypeScript (.tsx) to Illustrator — Illustrator handles the execution.
-- Claude Desktop currently does not allow setting system prompts, so you might need to guide it a little during use.
+## 🪟 Windows Notes
+
+- Adobe Illustrator must be installed
+- The `pywin32` package is required (installed automatically)
+- Illustrator scripting must be enabled
 
 ---
 
