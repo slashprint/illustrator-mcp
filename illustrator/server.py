@@ -38,44 +38,47 @@ try:
 except ImportError:
     from platform_backend import get_backend
 
-from extendscript_library import (
-    get_utility_functions,
-    get_all_examples,
-    list_available_examples,
-    SHAPE_EXAMPLES,
-    TEXT_EXAMPLES,
-    GRADIENT_EXAMPLES,
-    LOGO_EXAMPLES,
-    ICON_EXAMPLES,
-    LAYER_EXAMPLES,
-    EXPORT_EXAMPLES
-)
+try:
+    from .extendscript_library import (
+        get_utility_functions, get_all_examples, list_available_examples,
+        SHAPE_EXAMPLES, TEXT_EXAMPLES, GRADIENT_EXAMPLES,
+        LOGO_EXAMPLES, ICON_EXAMPLES, LAYER_EXAMPLES, EXPORT_EXAMPLES,
+    )
+except ImportError:
+    from extendscript_library import (
+        get_utility_functions, get_all_examples, list_available_examples,
+        SHAPE_EXAMPLES, TEXT_EXAMPLES, GRADIENT_EXAMPLES,
+        LOGO_EXAMPLES, ICON_EXAMPLES, LAYER_EXAMPLES, EXPORT_EXAMPLES,
+    )
 
-from design_guide import (
-    get_color_palette,
-    get_all_palettes,
-    get_typography_guide,
-    get_layout_principles,
-    get_logo_guidelines,
-    get_icon_guidelines,
-    get_print_specs,
-    get_design_rules,
-    get_full_design_guide,
-    get_korean_font_database,
-    get_korean_fonts_by_category,
-    get_korean_font_info,
-    recommend_korean_fonts,
-    get_validation_rules,
-    get_margin_rule
-)
+try:
+    from .design_guide import (
+        get_color_palette, get_all_palettes, get_typography_guide,
+        get_layout_principles, get_logo_guidelines, get_icon_guidelines,
+        get_print_specs, get_design_rules, get_full_design_guide,
+        get_korean_font_database, get_korean_fonts_by_category,
+        get_korean_font_info, recommend_korean_fonts,
+        get_validation_rules, get_margin_rule,
+    )
+except ImportError:
+    from design_guide import (
+        get_color_palette, get_all_palettes, get_typography_guide,
+        get_layout_principles, get_logo_guidelines, get_icon_guidelines,
+        get_print_specs, get_design_rules, get_full_design_guide,
+        get_korean_font_database, get_korean_fonts_by_category,
+        get_korean_font_info, recommend_korean_fonts,
+        get_validation_rules, get_margin_rule,
+    )
 
-from design_validator import DesignValidator, generate_fix_script
+try:
+    from .design_validator import DesignValidator, generate_fix_script
+except ImportError:
+    from design_validator import DesignValidator, generate_fix_script
 
-from image_analysis import (
-    analyze_image_colors,
-    analyze_image_layout,
-    extract_text_ocr
-)
+try:
+    from .image_analysis import analyze_image_colors, analyze_image_layout, extract_text_ocr
+except ImportError:
+    from image_analysis import analyze_image_colors, analyze_image_layout, extract_text_ocr
 
 # Set up logging
 logging.basicConfig(
