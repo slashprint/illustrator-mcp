@@ -1,221 +1,204 @@
-# Illustrator MCP Server (Windows)
+# Illustrator MCP Server (Windows & macOS)
 
-AI-powered Adobe Illustrator automation through Claude Desktop.
+Welcome to the **Illustrator MCP Server**! 🎨🚀
 
-> Describe what you want — like *"draw a minimalist coffee shop logo"* — and Illustrator brings it to life!
+This project allows AI agents to **directly create vector graphics** inside **Adobe Illustrator** using natural language prompts.  
+It works by sending ExtendScript commands to Illustrator via a local MCP (Model Context Protocol) server.
 
-## Features
+> Imagine simply describing what you want — like *"draw a small coffee shop during rain"* — and Illustrator brings it to life!
 
-### Core Tools
-- **view** - Screenshot of Illustrator window
-- **run** - Execute ExtendScript code directly
-- **get_document_info** - Get document structure (layers, artboards, objects) as JSON
-- **render_artboard** - Export specific artboard as PNG (independent of user view)
-
-### Design Assistance
-- **get_code_example** - Ready-to-use ExtendScript patterns
-- **get_design_guide** - Typography, layout, logo/icon design principles
-- **get_color_palette** - Curated color palettes (corporate, creative, minimal, etc.)
-
-### MCP Prompts (Auto-context for Claude)
-- **illustrator-expert** - General Illustrator expertise
-- **logo-designer** - Logo design specialization
-- **icon-designer** - Icon set design
-- **print-designer** - Print design (business cards, flyers, etc.)
+Works on **Windows** (COM automation) and **macOS** (AppleScript/osascript).
 
 ---
 
-## Quick Install (Windows)
+## ✨ Features
+- Control Adobe Illustrator programmatically using AI prompts
+- Send ExtendScript (.jsx) scripts directly to Illustrator
+- Capture screenshots of the Illustrator window
+- Open-source and lightweight
+- **Cross-platform:** Windows & macOS
+- **Multi-client:** Works with Claude Desktop, Claude Code, Cursor, VS Code Copilot, and JetBrains Copilot
 
-### Option 1: One-Click Install
-```batch
-# Double-click install.bat
-# Or run in terminal:
-.\install.bat
-```
+---
 
-### Option 2: Manual Install
+## 💻 Installation
 
-1. **Requirements**
-   - Python 3.11+
-   - Adobe Illustrator
-   - Claude Desktop
+### Prerequisites
+- **Python 3.12+** — [Download Python](https://www.python.org/downloads/)
+- **Adobe Illustrator** installed and running
+- **macOS only:** Grant Automation permissions when prompted (System Settings → Privacy & Security → Automation)
 
-2. **Install**
+### 1. Clone the repository
+
    ```bash
+   git clone https://github.com/krVatsal/illustrator-mcp.git
    cd illustrator-mcp
-   python -m venv .venv
-   .venv\Scripts\pip install -e .
    ```
 
-3. **Configure Claude Desktop**
+### 2. Create a virtual environment
 
-   Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-   ```json
-   {
-     "mcpServers": {
-       "illustrator": {
-         "command": "C:/path/to/illustrator-mcp/.venv/Scripts/python.exe",
-         "args": ["C:/path/to/illustrator-mcp/illustrator/server.py"]
-       }
-     }
-   }
-   ```
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-4. **Restart Claude Desktop**
+**Windows:**
+```bash
+python -m venv .venv
+.\.venv\Scripts\activate
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+> On macOS, `pywin32` is automatically skipped. No extra macOS packages required.
+
+### 4. Start the MCP Server (manual / debug mode)
+
+```bash
+python -m illustrator
+```
+
+### Run with one script (cross-platform)
+
+```bash
+bash run_server.sh
+```
+
+This script auto-detects your platform, creates a `.venv`, installs dependencies, and starts the server.
 
 ---
 
-## Usage Examples
+## 🔌 Client Configuration
 
-### Basic Commands
-```
-"Show me the current Illustrator document"
-→ Uses get_document_info
+The server uses **stdio transport** — compatible with all major MCP clients.
 
-"Render the first artboard"
-→ Uses render_artboard
+> **Important:** Do NOT start the server manually when using it through a client. The client starts and manages the server process automatically.
 
-"Create a blue rectangle 200x100 pixels"
-→ Uses run with ExtendScript
-```
+### Claude Desktop
 
-### Design Tasks
-```
-"Design a minimal logo for TechStart"
-→ Uses logo-designer prompt + design guides
-
-"Create a set of 5 navigation icons in outline style"
-→ Uses icon-designer prompt + icon guidelines
-
-"Design a business card for John Smith, CEO"
-→ Uses print-designer prompt + print specs
-```
-
-### Getting Help
-```
-"Show me ExtendScript examples for gradients"
-→ Uses get_code_example
-
-"What are the typography guidelines?"
-→ Uses get_design_guide
-
-"Give me a tech color palette"
-→ Uses get_color_palette
-```
-
----
-
-## Available Resources
-
-### Color Palettes
-| Name | Description |
-|------|-------------|
-| corporate | Professional business colors |
-| creative | Bold, vibrant agency colors |
-| minimal | Clean black/white/gray |
-| nature | Organic, earthy tones |
-| tech | Modern tech company colors |
-| warm | Sunset, coral, golden |
-| cool | Ocean, mint, lavender |
-
-### Code Example Categories
-- **shapes** - rectangle, circle, polygon, star, line, bezier
-- **text** - simple_text, styled_heading, paragraph_text, text_on_path
-- **gradients** - linear, radial, multi-stop
-- **logos** - circle_logo, text_logo, monogram_logo
-- **icons** - home_icon, settings_icon, user_icon
-- **layers** - create_layers, move_to_layer
-- **export** - PNG, SVG, PDF
-
-### Design Guides
-- Typography (hierarchy, font pairings, spacing)
-- Layout (grids, white space, alignment)
-- Logo design (principles, types, sizing)
-- Icon design (styles, grid sizes, consistency)
-- Print specs (business card, flyer, poster)
-
----
-
-## Architecture
-
-```
-Claude Desktop
-    ↓ MCP Protocol
-Illustrator MCP Server (Python)
-    ↓ Windows COM (pywin32)
-Adobe Illustrator
-    ↓ ExtendScript Engine
-Vector Graphics
-```
-
-### Key Components
-- `server.py` - MCP server with tools and prompts
-- `extendscript_library.py` - Code examples and utilities
-- `design_guide.py` - Design principles and color palettes
-- `prompt.py` - Prompt templates and suggestions
-
----
-
-## For Developers
-
-### Adding New Code Examples
-Edit `extendscript_library.py`:
-```python
-SHAPE_EXAMPLES["my_shape"] = '''
-var doc = app.activeDocument;
-// Your ExtendScript code
-'''
-```
-
-### Adding New Color Palettes
-Edit `design_guide.py`:
-```python
-COLOR_PALETTES["my_palette"] = {
-    "description": "My custom palette",
-    "colors": {
-        "primary": {"rgb": [255, 0, 0], "hex": "#FF0000", "usage": "Main color"}
+**macOS** — edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "illustrator": {
+      "command": "/path/to/illustrator-mcp/.venv/bin/python3",
+      "args": ["-m", "illustrator"]
     }
+  }
 }
 ```
 
-### Testing
-```bash
-# Test get_document_info
-.venv\Scripts\python -c "from illustrator.server import get_document_info; print(get_document_info())"
-
-# Test render_artboard
-.venv\Scripts\python -c "from illustrator.server import render_artboard; print(render_artboard())"
+**Windows** — edit `%APPDATA%\Claude\claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "illustrator": {
+      "command": "C:\\Users\\<YourUser>\\illustrator-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "illustrator"]
+    }
+  }
+}
 ```
+
+### Claude Code (CLI)
+
+A `.claude/mcp.json` is included in the repo. Claude Code will auto-detect it. Or add manually:
+
+```bash
+claude mcp add illustrator python3 -- -m illustrator
+```
+
+### GitHub Copilot (VS Code)
+
+A `.vscode/mcp.json` is included in the repo. VS Code (1.99+) will auto-detect it. Or add to your `settings.json`:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "illustrator": {
+        "type": "stdio",
+        "command": "python3",
+        "args": ["-m", "illustrator"]
+      }
+    }
+  }
+}
+```
+---
+
+## 🎯 Enhanced Prompt System
+
+This MCP server now includes an advanced prompt system to help you create better content! Use these new tools:
+
+- **`get_prompt_suggestions`** - Get categorized prompt examples for different types of content
+- **`get_system_prompt`** - Get the optimal system prompt for AI guidance
+- **`get_prompting_tips`** - Get tips for creating more effective prompts
+- **`get_advanced_template`** - Get structured templates for complex design tasks
+- **`help`** - Display comprehensive help and guidance
+
+### 📚 Prompt Categories Available:
+- 🎨 Basic Shapes & Geometry
+- 📝 Typography & Text  
+- 🏢 Logos & Branding
+- 🌆 Illustrations & Scenes
+- 🎭 Icons & UI Elements
+- 🎨 Artistic & Creative
+- 📊 Charts & Infographics
+- 🏷️ Print & Layout
+
+### 💡 Quick Start with Prompts
+Try asking: *"Get me prompt suggestions for logos"* or *"Show me prompting tips"*
+
+For detailed examples and templates, see [PROMPT_EXAMPLES.md](./PROMPT_EXAMPLES.md)
 
 ---
 
-## Troubleshooting
+## 📋 Sample Prompts I Tried
 
-### "ModuleNotFoundError: No module named 'mcp'"
-```bash
-.venv\Scripts\pip install -e .
-```
+Here are some prompts I used along with the results it generated:
 
-### "Win32 COM not available"
-```bash
-.venv\Scripts\pip install pywin32
-```
+- **Prompt 1:**  
+  *Design a clean, minimal vector art of a small coffee shop during rain, featuring a simple storefront, puddles on the street, and gentle grey clouds in the sky.*
 
-### "No document open"
-Make sure Adobe Illustrator is running with a document open.
+- **Prompt 2:**  
+  *Create a watercolor-style illustration of the Mumbai skyline at sunset.*
 
-### Claude can't connect
-1. Check `claude_desktop_config.json` paths use forward slashes
-2. Restart Claude Desktop after config changes
-3. Check MCP server logs in Claude Desktop developer tools
+- **Prompt 3:**  
+  *Create a modern, minimalistic logo for a tech startup called 'NeuraTech'.*
+
+*(See attached images for the results!)*
 
 ---
 
-## License
+## 🍎 macOS Notes
 
-MIT License - See LICENSE file
+- Adobe Illustrator must be installed and running
+- On first use, macOS will ask for **Automation permission** — allow your terminal/IDE to control Illustrator
+- If you see "Application not running" errors, open Illustrator first
+- Screenshots capture the full screen (Illustrator should be in foreground)
 
-## Contributing
+## 🪟 Windows Notes
 
-Pull requests welcome! Please open an issue first for major changes.
+- Adobe Illustrator must be installed
+- The `pywin32` package is required (installed automatically)
+- Illustrator scripting must be enabled
+
+---
+
+
+## 📢 Contributing
+
+Pull requests are welcome!  
+Feel free to open issues for feature requests, bugs, or suggestions.
+![Stars](https://img.shields.io/github/stars/krVatsal/illustrator-mcp)
+![Forks](https://img.shields.io/github/forks/krVatsal/illustrator-mcp)
+![License](https://img.shields.io/github/license/krVatsal/illustrator-mcp)
+
+---
+
+Happy creating! 🌈💛

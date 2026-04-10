@@ -13,27 +13,30 @@ import mcp.types as types
 from mcp.server.models import InitializationOptions
 from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
-from PIL import ImageGrab
 
-# Handle win32com import with better error handling
 try:
-    import win32com.client
-    import pythoncom
-    WIN32_AVAILABLE = True
-    print("WIN32 COM modules loaded successfully", file=sys.stderr)
-except ImportError as e:
-    print(f"Win32 COM not available: {e}", file=sys.stderr)
-    WIN32_AVAILABLE = False
-    win32com = None
+    from .prompt import (
+        get_system_prompt,
+        get_prompt_suggestions,
+        get_advanced_templates,
+        get_prompting_tips,
+        display_help,
+        format_advanced_template,
+    )
+except ImportError:
+    from prompt import (
+        get_system_prompt,
+        get_prompt_suggestions,
+        get_advanced_templates,
+        get_prompting_tips,
+        display_help,
+        format_advanced_template,
+    )
 
-from prompt import (
-    get_system_prompt,
-    get_prompt_suggestions,
-    get_advanced_templates,
-    get_prompting_tips,
-    display_help,
-    format_advanced_template
-)
+try:
+    from .platform_backend import get_backend
+except ImportError:
+    from platform_backend import get_backend
 
 from extendscript_library import (
     get_utility_functions,
@@ -82,6 +85,37 @@ logging.basicConfig(
 )
 
 server = Server("illustrator")
+
+# Initialise the platform-specific backend (Windows COM or macOS AppleScript).
+_backend = None
+
+
+def _get_backend():
+    global _backend
+    if _backend is None:
+        _backend = get_backend()
+    return _backend
+
+
+def _print_client_config_hint() -> None:
+    """Print a ready-to-copy config snippet for MCP clients."""
+    python_path = sys.executable.replace("\\", "\\\\")
+    server_path = os.path.abspath(__file__).replace("\\", "\\\\")
+    hint = f"""
+Add this MCP config in your client settings (Claude Desktop / Claude Code / Cursor / VS Code Copilot / JetBrains Copilot):
+{{
+  "mcpServers": {{
+    "illustrator": {{
+      "command": "{python_path}",
+      "args": [
+        "{server_path}"
+      ]
+    }}
+  }}
+}}
+"""
+    print(hint, file=sys.stderr)
+    sys.stderr.flush()
 
 
 # ===== MCP PROMPTS =====
@@ -313,7 +347,6 @@ Process:
 
     else:
         raise ValueError(f"Unknown prompt: {name}")
-
 
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
@@ -848,125 +881,22 @@ async def handle_list_tools() -> list[types.Tool]:
 
 def capture_illustrator() -> list[types.TextContent | types.ImageContent]:
     logging.info("Starting screenshot capture for Illustrator.")
-    if not WIN32_AVAILABLE:
-        return [types.TextContent(type="text", text="Win32 COM not available. Please install pywin32 and restart the server.")]
-    
     try:
-        shell = win32com.client.Dispatch("WScript.Shell")
-        shell.AppActivate("Adobe Illustrator")
-        time.sleep(1)
-        screenshot = ImageGrab.grab()
-        buffer = io.BytesIO()
-        screenshot.save(buffer, format="JPEG", quality=50, optimize=True)
-        screenshot_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        backend = _get_backend()
+        screenshot_data = backend.capture_screenshot()
         logging.info("Screenshot captured successfully.")
         return [types.ImageContent(type="image", mimeType="image/jpeg", data=screenshot_data)]
     except Exception as e:
         logging.error(f"Failed to capture screenshot: {str(e)}")
         return [types.TextContent(type="text", text=f"Failed to capture screenshot: {str(e)}")]
 
-EXTENDSCRIPT_UTILS = '''
-// ===== UTILITY FUNCTIONS =====
-
-// JSON stringify for ExtendScript (ES3 has no native JSON)
-function toJSON(obj) {
-    if (obj === null) return "null";
-    if (obj === undefined) return "null";
-
-    var type = typeof obj;
-    if (type === "number" || type === "boolean") return String(obj);
-    if (type === "string") {
-        return '"' + obj.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"').replace(/\\n/g, '\\\\n').replace(/\\r/g, '\\\\r').replace(/\\t/g, '\\\\t') + '"';
-    }
-
-    if (obj instanceof Array) {
-        var items = [];
-        for (var i = 0; i < obj.length; i++) {
-            items.push(toJSON(obj[i]));
-        }
-        return "[" + items.join(", ") + "]";
-    }
-
-    if (type === "object") {
-        var pairs = [];
-        for (var k in obj) {
-            if (obj.hasOwnProperty(k)) {
-                pairs.push('"' + k + '": ' + toJSON(obj[k]));
-            }
-        }
-        return "{" + pairs.join(", ") + "}";
-    }
-
-    return "null";
-}
-
-// Create RGB Color
-function makeRGBColor(r, g, b) {
-    var color = new RGBColor();
-    color.red = r;
-    color.green = g;
-    color.blue = b;
-    return color;
-}
-
-// Create CMYK Color
-function makeCMYKColor(c, m, y, k) {
-    var color = new CMYKColor();
-    color.cyan = c;
-    color.magenta = m;
-    color.yellow = y;
-    color.black = k;
-    return color;
-}
-
-// Center object on artboard
-function centerOnArtboard(item, artboardIndex) {
-    var doc = app.activeDocument;
-    var ab = doc.artboards[artboardIndex || 0];
-    var abRect = ab.artboardRect;
-    var abCenterX = (abRect[0] + abRect[2]) / 2;
-    var abCenterY = (abRect[1] + abRect[3]) / 2;
-    item.position = [abCenterX - item.width / 2, abCenterY + item.height / 2];
-}
-
-// Convert mm to points
-function mmToPoints(mm) {
-    return mm * 2.834645669;
-}
-
-// Convert points to mm
-function pointsToMm(points) {
-    return points / 2.834645669;
-}
-
-// ===== END UTILITY FUNCTIONS =====
-
-'''
-
-
-def run_illustrator_script(code: str, include_utils: bool = False) -> list[types.TextContent]:
-    """Run ExtendScript code and return the result."""
-    logging.info("Running ExtendScript code in Illustrator using COM.")
-    if not WIN32_AVAILABLE:
-        return [types.TextContent(type="text", text="Win32 COM not available. Please install pywin32 and restart the server.")]
-
+def run_illustrator_script(code: str) -> list[types.TextContent]:
+    logging.info("Running ExtendScript code in Illustrator.")
     try:
-        # Prepend utility functions if requested
-        if include_utils:
-            full_code = EXTENDSCRIPT_UTILS + code
-        else:
-            full_code = code
-
-        illustrator = win32com.client.Dispatch("Illustrator.Application")
-        # Use DoJavaScript instead of DoJavaScriptFile to get return value
-        result = illustrator.DoJavaScript(full_code)
+        backend = _get_backend()
+        result = backend.run_script(code)
         logging.info("ExtendScript executed successfully.")
-
-        # Return the actual result
-        if result is None:
-            return [types.TextContent(type="text", text="(no return value)")]
-        else:
-            return [types.TextContent(type="text", text=str(result))]
+        return [types.TextContent(type="text", text=result)]
     except Exception as e:
         logging.error(f"Failed to execute script: {str(e)}")
         return [types.TextContent(type="text", text=f"Failed to execute script: {str(e)}")]
@@ -975,47 +905,31 @@ def run_illustrator_script(code: str, include_utils: bool = False) -> list[types
 def get_document_info(include_objects: bool = True, max_objects_per_layer: int = 50) -> list[types.TextContent]:
     """Get detailed document information using ExtendScript and return as JSON."""
     logging.info("Getting document info from Illustrator.")
-    if not WIN32_AVAILABLE:
-        return [types.TextContent(type="text", text="Win32 COM not available.")]
 
     try:
-        # ExtendScript to gather document information
-        # Note: ExtendScript uses an old JS engine without native JSON support
         script = f'''
         (function() {{
-            // Simple JSON stringify for ExtendScript (no native JSON)
             function toJSON(obj, indent) {{
                 indent = indent || 0;
-                var pad = "";
-                for (var p = 0; p < indent; p++) pad += "  ";
-
                 if (obj === null) return "null";
                 if (obj === undefined) return "null";
-
                 var type = typeof obj;
                 if (type === "number" || type === "boolean") return String(obj);
                 if (type === "string") {{
                     return '"' + obj.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"').replace(/\\n/g, '\\\\n').replace(/\\r/g, '\\\\r') + '"';
                 }}
-
                 if (obj instanceof Array) {{
                     var items = [];
-                    for (var i = 0; i < obj.length; i++) {{
-                        items.push(toJSON(obj[i], indent + 1));
-                    }}
+                    for (var i = 0; i < obj.length; i++) items.push(toJSON(obj[i], indent + 1));
                     return "[" + items.join(", ") + "]";
                 }}
-
                 if (type === "object") {{
                     var pairs = [];
                     for (var k in obj) {{
-                        if (obj.hasOwnProperty(k)) {{
-                            pairs.push('"' + k + '": ' + toJSON(obj[k], indent + 1));
-                        }}
+                        if (obj.hasOwnProperty(k)) pairs.push('"' + k + '": ' + toJSON(obj[k], indent + 1));
                     }}
                     return "{{" + pairs.join(", ") + "}}";
                 }}
-
                 return "null";
             }}
 
@@ -1036,53 +950,32 @@ def get_document_info(include_objects: bool = True, max_objects_per_layer: int =
                 selection: []
             }};
 
-            // Artboards
             for (var i = 0; i < doc.artboards.length; i++) {{
                 var ab = doc.artboards[i];
                 var rect = ab.artboardRect;
                 info.artboards.push({{
-                    index: i,
-                    name: ab.name,
-                    left: rect[0],
-                    top: rect[1],
-                    right: rect[2],
-                    bottom: rect[3],
-                    width: rect[2] - rect[0],
-                    height: rect[1] - rect[3]
+                    index: i, name: ab.name,
+                    left: rect[0], top: rect[1], right: rect[2], bottom: rect[3],
+                    width: rect[2] - rect[0], height: rect[1] - rect[3]
                 }});
             }}
 
-            // Layers
             for (var i = 0; i < doc.layers.length; i++) {{
                 var layer = doc.layers[i];
                 var layerInfo = {{
-                    index: i,
-                    name: layer.name,
-                    visible: layer.visible,
-                    locked: layer.locked,
-                    color: layer.color ? layer.color.toString() : null,
-                    objectCount: layer.pageItems.length,
-                    objects: []
+                    index: i, name: layer.name, visible: layer.visible,
+                    locked: layer.locked, objectCount: layer.pageItems.length, objects: []
                 }};
 
-                // Objects in layer
                 if ({'true' if include_objects else 'false'}) {{
                     var maxItems = Math.min(layer.pageItems.length, {max_objects_per_layer});
                     for (var j = 0; j < maxItems; j++) {{
                         var item = layer.pageItems[j];
                         var objInfo = {{
-                            index: j,
-                            name: item.name || "(unnamed)",
-                            type: item.typename,
-                            left: item.left,
-                            top: item.top,
-                            width: item.width,
-                            height: item.height,
-                            visible: !item.hidden,
-                            locked: item.locked
+                            index: j, name: item.name || "(unnamed)", type: item.typename,
+                            left: item.left, top: item.top, width: item.width, height: item.height,
+                            visible: !item.hidden, locked: item.locked
                         }};
-
-                        // Add type-specific info
                         if (item.typename === "TextFrame") {{
                             objInfo.contents = item.contents.substring(0, 100);
                             objInfo.fontSize = item.textRange.characterAttributes.size;
@@ -1102,30 +995,21 @@ def get_document_info(include_objects: bool = True, max_objects_per_layer: int =
                                 }} catch(e) {{}}
                             }}
                         }}
-
                         layerInfo.objects.push(objInfo);
                     }}
-
                     if (layer.pageItems.length > {max_objects_per_layer}) {{
                         layerInfo.truncated = true;
                         layerInfo.totalObjects = layer.pageItems.length;
                     }}
                 }}
-
                 info.layers.push(layerInfo);
             }}
 
-            // Current selection
             for (var i = 0; i < doc.selection.length && i < 20; i++) {{
                 var sel = doc.selection[i];
                 info.selection.push({{
-                    index: i,
-                    name: sel.name || "(unnamed)",
-                    type: sel.typename,
-                    left: sel.left,
-                    top: sel.top,
-                    width: sel.width,
-                    height: sel.height
+                    index: i, name: sel.name || "(unnamed)", type: sel.typename,
+                    left: sel.left, top: sel.top, width: sel.width, height: sel.height
                 }});
             }}
 
@@ -1133,8 +1017,8 @@ def get_document_info(include_objects: bool = True, max_objects_per_layer: int =
         }})();
         '''
 
-        illustrator = win32com.client.Dispatch("Illustrator.Application")
-        result = illustrator.DoJavaScript(script)
+        backend = _get_backend()
+        result = backend.run_script(script)
         logging.info("Document info retrieved successfully.")
         return [types.TextContent(type="text", text=result)]
     except Exception as e:
@@ -1145,16 +1029,12 @@ def get_document_info(include_objects: bool = True, max_objects_per_layer: int =
 def render_artboard(artboard_index: int = 0, scale: float = 1.0) -> list[types.TextContent | types.ImageContent]:
     """Render a specific artboard to PNG and return as base64 image."""
     logging.info(f"Rendering artboard {artboard_index} at scale {scale}.")
-    if not WIN32_AVAILABLE:
-        return [types.TextContent(type="text", text="Win32 COM not available.")]
 
     try:
-        # Create temp file path for export
         temp_dir = tempfile.gettempdir()
         temp_file = os.path.join(temp_dir, f"illustrator_render_{int(time.time())}.png")
         temp_file_escaped = temp_file.replace("\\", "/")
 
-        # ExtendScript to export artboard as PNG
         script = f'''
         (function() {{
             if (app.documents.length === 0) {{
@@ -1168,10 +1048,8 @@ def render_artboard(artboard_index: int = 0, scale: float = 1.0) -> list[types.T
                 return "ERROR: Artboard index " + artboardIndex + " out of range. Document has " + doc.artboards.length + " artboards.";
             }}
 
-            // Set active artboard
             doc.artboards.setActiveArtboardIndex(artboardIndex);
 
-            // Export options
             var exportOptions = new ExportOptionsPNG24();
             exportOptions.antiAliasing = true;
             exportOptions.transparency = true;
@@ -1186,17 +1064,16 @@ def render_artboard(artboard_index: int = 0, scale: float = 1.0) -> list[types.T
         }})();
         '''
 
-        illustrator = win32com.client.Dispatch("Illustrator.Application")
-        result = illustrator.DoJavaScript(script)
+        backend = _get_backend()
+        result = backend.run_script(script)
 
         if result.startswith("ERROR:"):
             return [types.TextContent(type="text", text=result)]
 
-        # Read the exported PNG and convert to base64
         if os.path.exists(temp_file):
             with open(temp_file, "rb") as f:
                 image_data = base64.b64encode(f.read()).decode("utf-8")
-            os.unlink(temp_file)  # Clean up temp file
+            os.unlink(temp_file)
             logging.info("Artboard rendered successfully.")
             return [types.ImageContent(type="image", mimeType="image/png", data=image_data)]
         else:
@@ -1217,8 +1094,7 @@ async def handle_call_tool(name: str, arguments: dict | None):
         if not arguments or "code" not in arguments:
             logging.warning("No code provided for run tool.")
             return [types.TextContent(type="text", text="No code provided")]
-        include_utils = arguments.get("include_utils", False)
-        return run_illustrator_script(arguments["code"], include_utils)
+        return run_illustrator_script(arguments["code"])
 
     elif name == "get_document_info":
         include_objects = arguments.get("include_objects", True) if arguments else True
@@ -2111,6 +1987,7 @@ async def main():
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
             print("Server streams established, starting server...", file=sys.stderr)
             sys.stderr.flush()
+            _print_client_config_hint()
             
             await server.run(
                 read_stream,
