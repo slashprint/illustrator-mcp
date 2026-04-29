@@ -143,6 +143,7 @@ ExtendScript Tips:
 - Colors: Use RGBColor or CMYKColor objects
 - No native JSON - use provided toJSON function for complex data
 - Always check app.documents.length before accessing activeDocument
+- Units: ExtendScript APIs (doc.width, item.left, etc.) ALWAYS return points internally regardless of doc.rulerUnits. Tools like get_document_info convert to the document's display unit and report it via the top-level "unit" field. When generating ExtendScript code via the run tool, work in points (multiply mm by 2.834645669 to convert).
 
 Design Principles:
 - Keep it simple - less is more
@@ -941,13 +942,34 @@ def get_document_info(include_objects: bool = True, max_objects_per_layer: int =
             }}
 
             var doc = app.activeDocument;
+
+            function rulerUnitName(ru) {{
+                if (ru == RulerUnits.Millimeters) return "mm";
+                if (ru == RulerUnits.Centimeters) return "cm";
+                if (ru == RulerUnits.Inches) return "in";
+                if (ru == RulerUnits.Picas) return "pc";
+                if (ru == RulerUnits.Points) return "pt";
+                if (ru == RulerUnits.Pixels) return "px";
+                return "pt";
+            }}
+            var unitName = rulerUnitName(doc.rulerUnits);
+            function dim(pt) {{
+                if (pt === null || pt === undefined) return null;
+                var v = pt;
+                if (unitName === "mm") v = pt * 0.352777778;
+                else if (unitName === "cm") v = pt * 0.0352777778;
+                else if (unitName === "in") v = pt / 72;
+                else if (unitName === "pc") v = pt / 12;
+                return Math.round(v * 100) / 100;
+            }}
+
             var info = {{
                 name: doc.name,
                 path: doc.path ? doc.path.fsName : "Not saved",
-                width: doc.width,
-                height: doc.height,
+                unit: unitName,
+                width: dim(doc.width),
+                height: dim(doc.height),
                 colorSpace: doc.documentColorSpace == DocumentColorSpace.RGB ? "RGB" : "CMYK",
-                rulerUnits: doc.rulerUnits.toString(),
                 artboards: [],
                 layers: [],
                 selection: []
@@ -958,8 +980,8 @@ def get_document_info(include_objects: bool = True, max_objects_per_layer: int =
                 var rect = ab.artboardRect;
                 info.artboards.push({{
                     index: i, name: ab.name,
-                    left: rect[0], top: rect[1], right: rect[2], bottom: rect[3],
-                    width: rect[2] - rect[0], height: rect[1] - rect[3]
+                    left: dim(rect[0]), top: dim(rect[1]), right: dim(rect[2]), bottom: dim(rect[3]),
+                    width: dim(rect[2] - rect[0]), height: dim(rect[1] - rect[3])
                 }});
             }}
 
@@ -976,12 +998,12 @@ def get_document_info(include_objects: bool = True, max_objects_per_layer: int =
                         var item = layer.pageItems[j];
                         var objInfo = {{
                             index: j, name: item.name || "(unnamed)", type: item.typename,
-                            left: item.left, top: item.top, width: item.width, height: item.height,
+                            left: dim(item.left), top: dim(item.top), width: dim(item.width), height: dim(item.height),
                             visible: !item.hidden, locked: item.locked
                         }};
                         if (item.typename === "TextFrame") {{
                             objInfo.contents = item.contents.substring(0, 100);
-                            objInfo.fontSize = item.textRange.characterAttributes.size;
+                            objInfo.fontSize_pt = item.textRange.characterAttributes.size;
                         }} else if (item.typename === "PathItem") {{
                             objInfo.closed = item.closed;
                             objInfo.filled = item.filled;
@@ -1012,7 +1034,7 @@ def get_document_info(include_objects: bool = True, max_objects_per_layer: int =
                 var sel = doc.selection[i];
                 info.selection.push({{
                     index: i, name: sel.name || "(unnamed)", type: sel.typename,
-                    left: sel.left, top: sel.top, width: sel.width, height: sel.height
+                    left: dim(sel.left), top: dim(sel.top), width: dim(sel.width), height: dim(sel.height)
                 }});
             }}
 
