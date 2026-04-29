@@ -419,6 +419,44 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="open_file",
+            description="Open an Illustrator-compatible file (.ai, .pdf, .eps, .svg) and make it the active document. Returns basic info about the opened document.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the file to open."
+                    }
+                },
+                "required": ["path"]
+            },
+        ),
+        types.Tool(
+            name="save_as",
+            description="Save the active document to a path in the specified format. Supported formats: 'ai' (Illustrator native), 'pdf' (with print-quality preset). For PNG export, use render_artboard instead.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute output path. Extension should match the format."
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["ai", "pdf"],
+                        "description": "Output format: 'ai' or 'pdf'."
+                    },
+                    "pdf_preset": {
+                        "type": "string",
+                        "description": "Optional PDF preset name (e.g., '[High Quality Print]', '[Press Quality]', '[PDF/X-1a:2001]'). Defaults to '[High Quality Print]'.",
+                        "default": "[High Quality Print]"
+                    }
+                },
+                "required": ["path", "format"]
+            },
+        ),
+        types.Tool(
             name="get_prompt_suggestions",
             description="Get categorized prompt suggestions for creating content in Illustrator",
             inputSchema={
@@ -1108,6 +1146,84 @@ def render_artboard(artboard_index: int = 0, scale: float = 1.0) -> list[types.T
         logging.error(f"Failed to render artboard: {str(e)}")
         return [types.TextContent(type="text", text=f"Failed to render artboard: {str(e)}")]
 
+
+def open_file(path: str) -> list[types.TextContent]:
+    """Open a file in Illustrator and make it the active document."""
+    logging.info(f"Opening file in Illustrator: {path}")
+    if not os.path.isfile(path):
+        return [types.TextContent(type="text", text=json.dumps({"error": f"File not found: {path}"}))]
+    try:
+        path_literal = json.dumps(path)  # JS-safe quoted string
+        script = f'''
+        (function() {{
+            var f = new File({path_literal});
+            if (!f.exists) return '{{"error": "File not found in ExtendScript: ' + {path_literal} + '"}}';
+            var doc = app.open(f);
+            var result = '{{';
+            result += '"name": ' + '"' + doc.name.replace(/"/g, '\\\\"') + '",';
+            result += '"path": ' + '"' + (doc.path ? doc.path.fsName.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"') : "") + '",';
+            result += '"artboardCount": ' + doc.artboards.length + ',';
+            result += '"width_pt": ' + doc.width + ',';
+            result += '"height_pt": ' + doc.height;
+            result += '}}';
+            return result;
+        }})();
+        '''
+        backend = _get_backend()
+        result = backend.run_script(script)
+        logging.info("File opened successfully.")
+        return [types.TextContent(type="text", text=result)]
+    except Exception as e:
+        logging.error(f"Failed to open file: {str(e)}")
+        return [types.TextContent(type="text", text=f"Failed to open file: {str(e)}")]
+
+
+def save_as(path: str, format: str, pdf_preset: str = "[High Quality Print]") -> list[types.TextContent]:
+    """Save the active document as .ai or .pdf."""
+    logging.info(f"Saving active document to {path} as {format}.")
+    fmt = format.lower()
+    if fmt not in ("ai", "pdf"):
+        return [types.TextContent(type="text", text=json.dumps({"error": f"Unsupported format: {format}"}))]
+    try:
+        # Ensure the parent directory exists.
+        parent = os.path.dirname(path)
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent, exist_ok=True)
+
+        path_literal = json.dumps(path)
+        preset_literal = json.dumps(pdf_preset)
+
+        if fmt == "ai":
+            save_block = '''
+            var opts = new IllustratorSaveOptions();
+            opts.compatibility = Compatibility.ILLUSTRATOR17;
+            doc.saveAs(f, opts);
+            '''
+        else:  # pdf
+            save_block = f'''
+            var opts = new PDFSaveOptions();
+            opts.preset = {preset_literal};
+            doc.saveAs(f, opts);
+            '''
+
+        script = f'''
+        (function() {{
+            if (app.documents.length === 0) return '{{"error": "No document open"}}';
+            var doc = app.activeDocument;
+            var f = new File({path_literal});
+            {save_block}
+            return '{{"saved": ' + {path_literal} + ', "format": "{fmt}"}}';
+        }})();
+        '''
+        backend = _get_backend()
+        result = backend.run_script(script)
+        logging.info("Document saved successfully.")
+        return [types.TextContent(type="text", text=result)]
+    except Exception as e:
+        logging.error(f"Failed to save file: {str(e)}")
+        return [types.TextContent(type="text", text=f"Failed to save file: {str(e)}")]
+
+
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict | None):
     logging.info(f"Received tool call: {name} with arguments: {arguments}")
@@ -1130,6 +1246,17 @@ async def handle_call_tool(name: str, arguments: dict | None):
         artboard_index = arguments.get("artboard_index", 0) if arguments else 0
         scale = arguments.get("scale", 1.0) if arguments else 1.0
         return render_artboard(artboard_index, scale)
+
+    elif name == "open_file":
+        if not arguments or "path" not in arguments:
+            return [types.TextContent(type="text", text="Missing required argument: path")]
+        return open_file(arguments["path"])
+
+    elif name == "save_as":
+        if not arguments or "path" not in arguments or "format" not in arguments:
+            return [types.TextContent(type="text", text="Missing required arguments: path, format")]
+        pdf_preset = arguments.get("pdf_preset", "[High Quality Print]")
+        return save_as(arguments["path"], arguments["format"], pdf_preset)
 
     elif name == "get_prompt_suggestions":
         try:
