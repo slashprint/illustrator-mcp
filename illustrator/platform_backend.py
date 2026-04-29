@@ -140,29 +140,42 @@ class MacBackend(IllustratorBackend):
 
     @staticmethod
     def _osascript(script: str) -> str:
-        """Run a one-liner AppleScript and return stdout."""
+        """Run a one-liner AppleScript and return stdout (UTF-8 decoded)."""
+        env = {**os.environ, "LANG": os.environ.get("LANG", "en_US.UTF-8")}
         result = subprocess.run(
             ["osascript", "-e", script],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
+            env=env,
         )
         if result.returncode != 0:
-            stderr = result.stderr.strip()
+            stderr = (result.stderr or "").strip()
             raise RuntimeError(f"osascript failed ({result.returncode}): {stderr}")
-        return result.stdout.strip()
+        return (result.stdout or "").strip()
 
     @staticmethod
     def _osascript_multi(lines: list[str]) -> str:
-        """Run a multi-line AppleScript passed as separate -e arguments."""
+        """Run a multi-line AppleScript passed as separate -e arguments (UTF-8 decoded)."""
         cmd: list[str] = ["osascript"]
         for line in lines:
             cmd.extend(["-e", line])
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        env = {**os.environ, "LANG": os.environ.get("LANG", "en_US.UTF-8")}
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            env=env,
+        )
         if result.returncode != 0:
-            stderr = result.stderr.strip()
+            stderr = (result.stderr or "").strip()
             raise RuntimeError(f"osascript failed ({result.returncode}): {stderr}")
-        return result.stdout.strip()
+        return (result.stdout or "").strip()
 
     # ---- interface implementation --------------------------------------
 
@@ -199,10 +212,11 @@ class MacBackend(IllustratorBackend):
 
         try:
             logger.debug("ExtendScript saved to: %s", jsx_path)
-            # Use AppleScript to tell Illustrator to run the script file.
+            # Read the .jsx file as UTF-8 in AppleScript so non-ASCII source
+            # (e.g. Korean string literals) reaches ExtendScript intact.
             applescript = (
                 f'tell application "{self._APP_NAME}" to '
-                f'do javascript (read POSIX file "{jsx_path}") as string'
+                f'do javascript (read POSIX file "{jsx_path}" as «class utf8») as string'
             )
             result = self._osascript(applescript)
             logger.info("ExtendScript executed successfully (macOS/osascript).")
